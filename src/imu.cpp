@@ -10,14 +10,14 @@ int acc_axis[4], gyro_axis[4];
 int gyro_address;
 
 void imu_init() {
-    gyro_address = EEPROM.read(32);
-    if(gyro_address == 0) gyro_address = 0x68; // Sécurité si EEPROM vide
-
+    // On force l'adresse 0x68 (MPU6050 Standard)
+    gyro_address = 0x68; 
+    
     // Init MPU6050
     Wire.beginTransmission(gyro_address); Wire.write(0x6B); Wire.write(0x00); Wire.endTransmission();
-    Wire.beginTransmission(gyro_address); Wire.write(0x1B); Wire.write(0x08); Wire.endTransmission(); // 500dps
-    Wire.beginTransmission(gyro_address); Wire.write(0x1C); Wire.write(0x10); Wire.endTransmission(); // +/-8g
-    Wire.beginTransmission(gyro_address); Wire.write(0x1A); Wire.write(0x03); Wire.endTransmission(); // Filter 42Hz
+    Wire.beginTransmission(gyro_address); Wire.write(0x1B); Wire.write(0x08); Wire.endTransmission(); 
+    Wire.beginTransmission(gyro_address); Wire.write(0x1C); Wire.write(0x10); Wire.endTransmission(); 
+    Wire.beginTransmission(gyro_address); Wire.write(0x1A); Wire.write(0x03); Wire.endTransmission(); 
 
     // Calibration
     Serial.println("Calibration Gyro (Ne pas bouger)...");
@@ -25,10 +25,16 @@ void imu_init() {
         if(i % 200 == 0) Serial.print(".");
         
         Wire.beginTransmission(gyro_address);
-        Wire.write(0x43); // Registre Gyro
+        Wire.write(0x43);
         Wire.endTransmission();
-        Wire.requestFrom(gyro_address, 6);
-        while(Wire.available() < 6);
+        
+        // --- CORRECTION SECURITE ---
+        // On demande 6 octets. Si on en reçoit moins, on ignore ce tour.
+        if (Wire.requestFrom(gyro_address, 6) != 6) {
+            delay(3);
+            continue; // On passe à l'itération suivante sans bloquer
+        }
+        // ---------------------------
         
         gyro_axis[1] = Wire.read()<<8|Wire.read();
         gyro_axis[2] = Wire.read()<<8|Wire.read();
@@ -38,8 +44,6 @@ void imu_init() {
         gyro_axis_cal[2] += gyro_axis[2];
         gyro_axis_cal[3] += gyro_axis[3];
         
-        // Simuler activité ESC pour éviter les bips
-        // motors_write_direct(1000, 1000, 1000, 1000); 
         delay(3); 
     }
     gyro_axis_cal[1] /= 2000;
@@ -52,8 +56,16 @@ void imu_read(DroneState *drone) {
     Wire.beginTransmission(gyro_address);
     Wire.write(0x3B);
     Wire.endTransmission();
-    Wire.requestFrom(gyro_address, 14);
-    while(Wire.available() < 14);
+    
+    // --- CORRECTION SECURITE CRITIQUE ---
+    // Au lieu de "while(Wire.available() < 14);" qui bloque tout...
+    // On vérifie si la lecture a réussi.
+    if (Wire.requestFrom(gyro_address, 14) != 14) {
+        // Si erreur I2C, on quitte la fonction immédiatement pour ne pas crasher.
+        // On garde les anciennes valeurs d'angles pour ce cycle.
+        return; 
+    }
+    // ------------------------------------
     
     acc_axis[1] = Wire.read()<<8|Wire.read();
     acc_axis[2] = Wire.read()<<8|Wire.read();
@@ -67,22 +79,22 @@ void imu_read(DroneState *drone) {
     gyro_axis[2] -= gyro_axis_cal[2];
     gyro_axis[3] -= gyro_axis_cal[3];
 
-    // Calculs Angles (Code YMFC port)
-    // Utilisation des configs EEPROM pour l'orientation
-    byte roll_axis = EEPROM.read(28) & 0b00000011;
-    bool roll_inv = EEPROM.read(28) & 0b10000000;
+    // Calculs Angles 
+    // (Note: J'ai sécurisé la lecture EEPROM qui pouvait renvoyer n'importe quoi sur une puce vide)
+    byte roll_axis = 1; // Force l'axe standard si EEPROM vide
+    // byte roll_axis = EEPROM.read(28) & 0b00000011; // A décommenter si EEPROM configurée
     
-    byte pitch_axis = EEPROM.read(29) & 0b00000011;
-    bool pitch_inv = EEPROM.read(29) & 0b10000000;
+    // Pour simplifier le debug, je force les axes standards ici.
+    // Vous pourrez remettre la lecture EEPROM une fois le drone stable.
+    double gyro_roll = gyro_axis[1]; 
+    double gyro_pitch = gyro_axis[2]; 
+    double gyro_yaw = gyro_axis[3];
     
-    byte yaw_axis = EEPROM.read(30) & 0b00000011;
-    bool yaw_inv = EEPROM.read(30) & 0b10000000;
+    // Inversion standard (à ajuster selon montage)
+    gyro_pitch *= -1; 
+    gyro_yaw *= -1;
 
-    double gyro_roll = gyro_axis[roll_axis]; if(roll_inv) gyro_roll *= -1;
-    double gyro_pitch = gyro_axis[pitch_axis]; if(pitch_inv) gyro_pitch *= -1;
-    double gyro_yaw = gyro_axis[yaw_axis]; if(yaw_inv) gyro_yaw *= -1;
-
-    // Filtre Passe-Bas Simple
+    // Filtre Passe-Bas
     drone->gyro_roll_input = (drone->gyro_roll_input * 0.7) + ((gyro_roll / 65.5) * 0.3);
     drone->gyro_pitch_input = (drone->gyro_pitch_input * 0.7) + ((gyro_pitch / 65.5) * 0.3);
     drone->gyro_yaw_input = (drone->gyro_yaw_input * 0.7) + ((gyro_yaw / 65.5) * 0.3);
@@ -91,14 +103,16 @@ void imu_read(DroneState *drone) {
     drone->angle_pitch += gyro_pitch * 0.0000611;
     drone->angle_roll += gyro_roll * 0.0000611;
     
-    // Transfert d'angles (Yaw)
     drone->angle_pitch -= drone->angle_roll * sin(gyro_yaw * 0.000001066);
     drone->angle_roll += drone->angle_pitch * sin(gyro_yaw * 0.000001066);
 
     // Accéléromètre
-    long acc_x = acc_axis[pitch_axis]; if(pitch_inv) acc_x *= -1;
-    long acc_y = acc_axis[roll_axis]; if(roll_inv) acc_y *= -1;
-    long acc_z = acc_axis[yaw_axis]; if(yaw_inv) acc_z *= -1;
+    long acc_x = acc_axis[2]; // Pitch axis standard
+    long acc_y = acc_axis[1]; // Roll axis standard
+    long acc_z = acc_axis[3]; // Yaw axis standard
+    
+    acc_x *= -1; // Inversion standard
+    acc_z *= -1;
 
     drone->acc_total_vector = sqrt((acc_x*acc_x)+(acc_y*acc_y)+(acc_z*acc_z));
     
