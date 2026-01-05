@@ -2,63 +2,70 @@
 #include <EEPROM.h>
 #include "setup_wizard.h"
 #include "config.h"
+#include "radio.h" // Pour radio_read_raw
 
-// Variables temporaires pour le setup
-extern volatile int raw_channel_1, raw_channel_2, raw_channel_3, raw_channel_4;
+// On utilise les variables définies dans radio.cpp
+// Note: plus besoin de 'volatile' ni 'extern' complexe ici car inclus via radio.h ou redéclaré simplement
 int center_1, center_2, center_3, center_4;
 int min_1, min_2, min_3, min_4;
 int max_1, max_2, max_3, max_4;
 byte assign_1, assign_2, assign_3, assign_4;
 
 void wait_zero() {
-    // Attend que les sticks soient centrés (~1500)
     bool ok = false;
     while(!ok) {
+        radio_read_raw(); // <--- AJOUT CRUCIAL : Lire le S.BUS
         if(raw_channel_1 > 1480 && raw_channel_1 < 1520 &&
            raw_channel_2 > 1480 && raw_channel_2 < 1520 &&
            raw_channel_3 > 1480 && raw_channel_3 < 1520 &&
            raw_channel_4 > 1480 && raw_channel_4 < 1520) ok = true;
-        delay(100);
+        delay(20); // Delay réduit pour être plus réactif
         Serial.print(".");
     }
     Serial.println("OK");
 }
 
 void run_setup_wizard() {
-    Serial.println(F("\n\n--- SETUP WIZARD ESP32 ---"));
+    Serial.println(F("\n\n--- SETUP WIZARD ESP32 (S.BUS) ---"));
     Serial.println(F("Placez les sticks au CENTRE."));
     wait_zero();
     
-    // 1. Capture Centres
     Serial.println(F("Enregistrement Centres..."));
-    center_1 = raw_channel_1;
-    center_2 = raw_channel_2;
-    center_3 = raw_channel_3;
-    center_4 = raw_channel_4;
+    center_1 = raw_channel_1; center_2 = raw_channel_2;
+    center_3 = raw_channel_3; center_4 = raw_channel_4;
     
-    // 2. Détection Inversions (Simplifié pour ESP32 - On suppose l'ordre des pins correct 1,2,3,4)
-    // On garde l'assignation par défaut 1, 2, 3, 4 mais on détecte si inversé
     Serial.println(F("Montez les GAZ (CH3) puis centrez."));
-    while(raw_channel_3 < 1800 && raw_channel_3 > 1200) delay(10);
+    while(raw_channel_3 < 1800 && raw_channel_3 > 1200) { 
+        radio_read_raw(); // <--- AJOUT S.BUS
+        delay(10); 
+    }
     assign_3 = 3; if(raw_channel_3 < 1500) assign_3 |= 0x80;
     wait_zero();
     
     Serial.println(F("Mettez ROLL a DROITE (CH1) puis centrez."));
-    while(raw_channel_1 < 1800 && raw_channel_1 > 1200) delay(10);
+    while(raw_channel_1 < 1800 && raw_channel_1 > 1200) {
+        radio_read_raw(); // <--- AJOUT S.BUS
+        delay(10);
+    }
     assign_1 = 1; if(raw_channel_1 < 1500) assign_1 |= 0x80;
     wait_zero();
 
     Serial.println(F("Mettez PITCH vers HAUT (CH2) puis centrez."));
-    while(raw_channel_2 < 1800 && raw_channel_2 > 1200) delay(10);
+    while(raw_channel_2 < 1800 && raw_channel_2 > 1200) {
+        radio_read_raw(); // <--- AJOUT S.BUS
+        delay(10);
+    }
     assign_2 = 2; if(raw_channel_2 < 1500) assign_2 |= 0x80;
     wait_zero();
 
     Serial.println(F("Mettez YAW a DROITE (CH4) puis centrez."));
-    while(raw_channel_4 < 1800 && raw_channel_4 > 1200) delay(10);
+    while(raw_channel_4 < 1800 && raw_channel_4 > 1200) {
+        radio_read_raw(); // <--- AJOUT S.BUS
+        delay(10);
+    }
     assign_4 = 4; if(raw_channel_4 < 1500) assign_4 |= 0x80;
     wait_zero();
 
-    // 3. Calibration Limites
     Serial.println(F("Bougez TOUS les sticks dans les coins (10 sec)..."));
     min_1 = center_1; max_1 = center_1;
     min_2 = center_2; max_2 = center_2;
@@ -67,6 +74,7 @@ void run_setup_wizard() {
     
     long timer = millis() + 10000;
     while(millis() < timer) {
+        radio_read_raw(); // <--- AJOUT S.BUS
         if(raw_channel_1 < min_1) min_1 = raw_channel_1; if(raw_channel_1 > max_1) max_1 = raw_channel_1;
         if(raw_channel_2 < min_2) min_2 = raw_channel_2; if(raw_channel_2 > max_2) max_2 = raw_channel_2;
         if(raw_channel_3 < min_3) min_3 = raw_channel_3; if(raw_channel_3 > max_3) max_3 = raw_channel_3;

@@ -2,52 +2,53 @@
 #include <EEPROM.h>
 #include "radio.h"
 #include "config.h"
+#include "sbus.h" // Librairie Bolder Flight
 
-// Variables Interruptions
-volatile unsigned long timer_1, timer_2, timer_3, timer_4;
-volatile int raw_channel_1, raw_channel_2, raw_channel_3, raw_channel_4;
+// Variables Globales (utilisées par main et setup_wizard)
+int raw_channel_1 = 1500, raw_channel_2 = 1500, raw_channel_3 = 1000, raw_channel_4 = 1500;
 byte eeprom_data[36];
 
-// Interrupt Service Routines (Une par pin pour ESP32)
-void IRAM_ATTR isr_ch1() {
-    unsigned long now = micros();
-    if(digitalRead(PIN_RADIO_1)) timer_1 = now;
-    else raw_channel_1 = now - timer_1;
-}
-void IRAM_ATTR isr_ch2() {
-    unsigned long now = micros();
-    if(digitalRead(PIN_RADIO_2)) timer_2 = now;
-    else raw_channel_2 = now - timer_2;
-}
-void IRAM_ATTR isr_ch3() {
-    unsigned long now = micros();
-    if(digitalRead(PIN_RADIO_3)) timer_3 = now;
-    else raw_channel_3 = now - timer_3;
-}
-void IRAM_ATTR isr_ch4() {
-    unsigned long now = micros();
-    if(digitalRead(PIN_RADIO_4)) timer_4 = now;
-    else raw_channel_4 = now - timer_4;
-}
+// Création objet S.BUS : Serial2, RX=PIN_SBUS_RX, TX=-1, Inverted=true
+bfs::SbusRx sbus(&Serial2, PIN_SBUS_RX, -1, true);
+bfs::SbusData data;
 
 void radio_init() {
-    pinMode(PIN_RADIO_1, INPUT); attachInterrupt(PIN_RADIO_1, isr_ch1, CHANGE);
-    pinMode(PIN_RADIO_2, INPUT); attachInterrupt(PIN_RADIO_2, isr_ch2, CHANGE);
-    pinMode(PIN_RADIO_3, INPUT); attachInterrupt(PIN_RADIO_3, isr_ch3, CHANGE);
-    pinMode(PIN_RADIO_4, INPUT); attachInterrupt(PIN_RADIO_4, isr_ch4, CHANGE);
-
-    // Charge la config EEPROM
+    // Démarrage du S.BUS
+    sbus.Begin();
+    
+    // Charge la config EEPROM (Calibration)
     for(int i = 0; i < 36; i++) eeprom_data[i] = EEPROM.read(i);
 }
 
+// Fonction spéciale pour lire le S.BUS à la demande
+// (Indispensable pour le setup_wizard qui tourne en boucle)
+void radio_read_raw() {
+    if (sbus.Read()) {
+        data = sbus.data();
+        
+        // Mapping S.BUS (172-1811) vers PWM Standard (1000-2000)
+        // Note: L'ordre des canaux [0]..[3] dépend de ta radio (AETR ou TAER)
+        // Ici je suppose AETR (Standard FrSky/Radiolink) : 0=Roll, 1=Pitch, 2=Thr, 3=Yaw
+        // Si c'est inversé, change les indices [x]
+        raw_channel_1 = map(data.ch[0], 172, 1811, 1000, 2000); // Roll
+        raw_channel_2 = map(data.ch[1], 172, 1811, 1000, 2000); // Pitch
+        raw_channel_3 = map(data.ch[2], 172, 1811, 1000, 2000); // Throttle
+        raw_channel_4 = map(data.ch[3], 172, 1811, 1000, 2000); // Yaw
+    }
+}
+
 void radio_update(DroneState *drone) {
+    // 1. Lire les nouvelles données
+    radio_read_raw();
+
+    // 2. Appliquer la calibration (Centre/Inversion) via l'EEPROM
     drone->channel_1 = convert_receiver_channel(1);
     drone->channel_2 = convert_receiver_channel(2);
     drone->channel_3 = convert_receiver_channel(3);
     drone->channel_4 = convert_receiver_channel(4);
 }
 
-// Fonction YMFC originale adaptée
+// Fonction YMFC originale (Inchangée, elle fait le job de calibration)
 int convert_receiver_channel(byte function) {
     byte channel, reverse;
     int low, center, high, actual, difference;
@@ -55,9 +56,6 @@ int convert_receiver_channel(byte function) {
     channel = eeprom_data[function + 23] & 0b00000111;
     if(eeprom_data[function + 23] & 0b10000000) reverse = 1; else reverse = 0;
 
-    // Mapping ESP32 variables -> Channel index
-    // Note: Dans le setup YMFC, l'ordre est déterminé. 
-    // Ici on map simplement nos lectures interrupt vers un tableau virtuel pour respecter la logique
     int inputs[5];
     inputs[1] = raw_channel_1;
     inputs[2] = raw_channel_2;
