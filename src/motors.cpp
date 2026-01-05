@@ -2,6 +2,7 @@
 #include "motors.h"
 #include "config.h"
 
+// Variables globales pour les impulsions moteurs
 int esc_1, esc_2, esc_3, esc_4;
 
 // Configuration des canaux PWM ESP32 (0 à 15 disponibles)
@@ -12,7 +13,7 @@ int esc_1, esc_2, esc_3, esc_4;
 
 void motors_init() {
     // Configuration du Timer LEDC (Hardware PWM)
-    // Fréquence 250Hz, Résolution 14 bits (0-16383)
+    // Fréquence définie dans config.h (250Hz), Résolution 14 bits (0-16383)
     ledcSetup(PWM_CH1, ESC_FREQ, 14);
     ledcSetup(PWM_CH2, ESC_FREQ, 14);
     ledcSetup(PWM_CH3, ESC_FREQ, 14);
@@ -28,21 +29,24 @@ void motors_init() {
 }
 
 void motors_stop() {
-    esc_1 = 1000; 
-    esc_2 = 1000; 
-    esc_3 = 1000; 
-    esc_4 = 1000;
+    esc_1 = MOTOR_OFF; 
+    esc_2 = MOTOR_OFF; 
+    esc_3 = MOTOR_OFF; 
+    esc_4 = MOTOR_OFF;
     motors_write(); // Applique immédiatement
 }
 
 void motors_mix(DroneState *drone) {
     int raw_throttle = drone->channel_3;
 
+    // Sécurité basse
+    if(raw_throttle < 1000) raw_throttle = 1000;
+
     // --- RÉINTÉGRATION VFINAL : ADOUCISSEMENT GAZ ---
     // Réduction de la plage à 85% pour maniabilité 
     int throttle = 1000 + (raw_throttle - 1000) * 0.85;
 
-    // Sécurité Max
+    // Sécurité Max définie dans config.h
     if (throttle > MAX_THROTTLE_FLIGHT) throttle = MAX_THROTTLE_FLIGHT;
 
     // Calcul du mixage (Throttle + PID)
@@ -64,10 +68,11 @@ void motors_mix(DroneState *drone) {
     }
 
     // Assignation et limites (1080 est le ralenti mini armé VFinal)
-    esc_1 = constrain(esc_1_calc, 1080, MAX_THROTTLE_FLIGHT);
-    esc_2 = constrain(esc_2_calc, 1080, MAX_THROTTLE_FLIGHT);
-    esc_3 = constrain(esc_3_calc, 1080, MAX_THROTTLE_FLIGHT);
-    esc_4 = constrain(esc_4_calc, 1080, MAX_THROTTLE_FLIGHT);
+    // On utilise les constantes de config.h si possible, sinon valeurs par défaut
+    esc_1 = constrain(esc_1_calc, MIN_THROTTLE_IDLE, MAX_THROTTLE_FLIGHT);
+    esc_2 = constrain(esc_2_calc, MIN_THROTTLE_IDLE, MAX_THROTTLE_FLIGHT);
+    esc_3 = constrain(esc_3_calc, MIN_THROTTLE_IDLE, MAX_THROTTLE_FLIGHT);
+    esc_4 = constrain(esc_4_calc, MIN_THROTTLE_IDLE, MAX_THROTTLE_FLIGHT);
 }
 
 // Génération PWM Hardware (Non-Bloquante)
@@ -77,8 +82,17 @@ void motors_write() {
     // Duty = (Pulse_us / 4000) * 16383
     
     // Note: On utilise des calculs entiers pour la rapidité
-    ledcWrite(PWM_CH1, (esc_1 * 16383) / 4000);
-    ledcWrite(PWM_CH2, (esc_2 * 16383) / 4000);
-    ledcWrite(PWM_CH3, (esc_3 * 16383) / 4000);
-    ledcWrite(PWM_CH4, (esc_4 * 16383) / 4000);
+    ledcWrite(PWM_CH1, (esc_1 * 16383) / 20000);
+    ledcWrite(PWM_CH2, (esc_2 * 16383) / 20000);
+    ledcWrite(PWM_CH3, (esc_3 * 16383) / 20000);
+    ledcWrite(PWM_CH4, (esc_4 * 16383) / 20000);
+}
+
+// --- LA FONCTION MANQUANTE ---
+void motors_write_direct(int m1, int m2, int m3, int m4) {
+    esc_1 = m1;
+    esc_2 = m2;
+    esc_3 = m3;
+    esc_4 = m4;
+    motors_write();
 }

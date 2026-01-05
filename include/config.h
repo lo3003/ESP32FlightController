@@ -2,15 +2,19 @@
 #define CONFIG_H
 
 // --- PINOUT (ESP32 30-PIN) ---
-#define PIN_MOTOR_1    13  // Avant Droit (CCW)
-#define PIN_MOTOR_2    27  // Arrière Droit (CW)
-#define PIN_MOTOR_3    26  // Arrière Gauche (CCW)
-#define PIN_MOTOR_4    25  // Avant Gauche (CW)
+// Adapté à votre câblage physique :
+#define PIN_MOTOR_1    27  // Avant Droit (CCW)
+#define PIN_MOTOR_2    13  // Arrière Droit (CW)
+#define PIN_MOTOR_3    25  // Arrière Gauche (CCW)
+#define PIN_MOTOR_4    26  // Avant Gauche (CW)
 
-// --- RADIO (MODIFICATION S.BUS) ---
-// On utilise uniquement IO4 pour le S.BUS (RX)
+// --- CONFIGURATION ESC ---
+// ATTENTION : Laisser à 250Hz (Standard OneShot125 / PWM Rapide)
+#define ESC_FREQ       50 
+
+// --- RADIO (S.BUS) ---
 #define PIN_SBUS_RX    4   
-#define D_FILTER_COEFF  0.3f  
+#define D_FILTER_COEFF 0.3f  
 #define PIN_LED        2
 
 // --- I2C ---
@@ -34,7 +38,7 @@
 #define PID_MAX_YAW    400
 
 // --- REGLAGES MOTEURS ---
-#define MAX_THROTTLE        1800
+#define MAX_THROTTLE_FLIGHT 1800 
 #define MIN_THROTTLE_IDLE   1100 
 #define MOTOR_OFF           1000
 
