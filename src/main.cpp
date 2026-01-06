@@ -7,7 +7,7 @@
 #include "pid.h"
 #include "motors.h"
 #include "esc_calibrate.h"
-
+#include "telemetry.h"
 // On supprime les includes inutiles (Telemetry, Setup Wizard, EEPROM)
 
 DroneState drone;
@@ -26,7 +26,7 @@ void setup() {
     motors_init();
     radio_init();
 
-    // Plus de start_telemetry_task() -> Le Wifi reste éteint !
+    start_telemetry_task(&drone); 
 
     Serial.println(F("Attente signal radio..."));
     unsigned long wait_radio = millis();

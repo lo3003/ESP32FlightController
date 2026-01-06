@@ -15,7 +15,7 @@
 // --- RADIO (S.BUS) ---
 #define PIN_SBUS_RX    4   
 #define D_FILTER_COEFF 0.3f  
-#define PIN_LED        2
+#define PIN_LED        5
 
 // --- I2C ---
 #define GYRO_ADDRESS   0x68
